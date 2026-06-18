@@ -7,9 +7,22 @@ export function buildCaptureArgs(pane, lines = 200) {
   return ['capture-pane', '-t', pane, '-p', '-S', `-${lines}`];
 }
 
-export function buildSendKeysArgs(pane, text) {
-  return ['send-keys', '-t', pane, text, 'Enter'];
+// The message text and Enter must be sent as SEPARATE send-keys calls.
+// Current Claude Code TUI (v2.x) does not submit when text and Enter arrive
+// in one call — the Enter is absorbed and the text just sits in the prompt.
+// `-l` sends the text literally so words like "Enter" in a custom retry
+// message aren't interpreted as key names.
+export function buildSendTextArgs(pane, text) {
+  return ['send-keys', '-t', pane, '-l', text];
 }
+
+export function buildSendEnterArgs(pane) {
+  return ['send-keys', '-t', pane, 'Enter'];
+}
+
+// Delay between typing the text and pressing Enter, giving the TUI time to
+// register the input before submission.
+export const SEND_KEYS_ENTER_DELAY_MS = 300;
 
 export function buildDisplayArgs(pane, format) {
   return ['display-message', '-t', pane, '-p', format];
@@ -32,7 +45,11 @@ export async function capturePane(pane, lines = 200) {
 }
 
 export async function sendKeys(pane, text) {
-  await execFileAsync('tmux', buildSendKeysArgs(pane, text));
+  // Type the text first, pause so the TUI registers it, then submit with Enter.
+  // Sending both in one call does not submit in the current Claude Code TUI.
+  await execFileAsync('tmux', buildSendTextArgs(pane, text));
+  await new Promise((r) => setTimeout(r, SEND_KEYS_ENTER_DELAY_MS));
+  await execFileAsync('tmux', buildSendEnterArgs(pane));
 }
 
 export async function getPaneCommand(pane) {
